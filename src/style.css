@@ -3,3 +3,11 @@
   vertical-align: top;
   border: 1px solid salmon;
 }
+
+canvas {
+  border-radius: 30px;
+  margin: 20px;
+  padding: 20px;
+  width: 50%;
+  height: 50%;
+}
