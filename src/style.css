@@ -6,8 +6,6 @@
 
 canvas {
   border-radius: 30px;
-  margin: 20px;
-  padding: 20px;
-  width: 50%;
-  height: 50%;
+  background-color: beige;
+  filter: drop-shadow(5px 5px 2px rgb(87, 87, 87));
 }
