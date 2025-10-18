@@ -15,6 +15,7 @@ ctx.strokeStyle = "black";
 
 type Point = { x: number; y: number };
 let lines: Point[][] = [];
+const redoLines: Point[][] = [];
 let currentLine: Point[] | null = null;
 
 const cursor = { active: false, x: 0, y: 0 };
@@ -86,4 +87,33 @@ document.body.append(clearButton);
 clearButton.addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   lines = [];
+});
+
+const undoButton = document.createElement("button");
+undoButton.innerHTML = "undo";
+document.body.append(undoButton);
+
+undoButton.addEventListener("click", () => {
+  if (lines.length > 0) {
+    const lastLine = lines.pop();
+    if (lastLine) {
+      redoLines.push(lastLine);
+      canvas.dispatchEvent(new CustomEvent("drawing-changed"));
+    }
+  }
+});
+
+const redoButton = document.createElement("button");
+redoButton.innerHTML = "redo";
+document.body.append(redoButton);
+
+redoButton.addEventListener("click", () => {
+  if (redoLines.length > 0) {
+    const redoLine = redoLines.pop();
+
+    if (redoLine) {
+      lines.push(redoLine);
+      canvas.dispatchEvent(new CustomEvent("drawing-changed"));
+    }
+  }
 });
