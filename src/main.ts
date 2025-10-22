@@ -116,3 +116,21 @@ redoButton.addEventListener("click", () => {
     }
   }
 });
+
+/*const lineSize = document.createElement("select");
+lineSize.innerHTML = `
+  <option value=3>Thickness</option>
+  <option value=1>1</option>
+  <option value=3>3</option>
+  <option value=5>5</option>
+  <option value=10>10</option>
+  <option value=15>15</option>
+`;
+document.body.append(lineSize);
+
+lineSize.addEventListener("change", (e) => {
+  const target = e.target as HTMLSelectElement;
+  if (target.value) {
+    ctx.lineWidth = target.value;
+  }
+});*/
