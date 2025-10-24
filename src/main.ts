@@ -13,6 +13,11 @@ const ctx = canvas.getContext("2d")!;
 let currentStrokeSize: number = 3;
 ctx.lineWidth = currentStrokeSize;
 ctx.strokeStyle = "black";
+const preview = {
+  active: false,
+  x: 0,
+  y: 0,
+};
 
 interface DrawCommand {
   lineWidth: number;
@@ -71,8 +76,25 @@ canvas.addEventListener("mousemove", (e) => {
     cursor.x = e.offsetX;
     cursor.y = e.offsetY;
     currentCommand?.drag(cursor.x, cursor.y);
-    canvas.dispatchEvent(new CustomEvent("drawing-changed"));
+  } else {
+    preview.x = e.offsetX;
+    preview.y = e.offsetY;
   }
+
+  canvas.dispatchEvent(new CustomEvent("drawing-changed"));
+});
+
+canvas.addEventListener("mouseenter", (e) => { //called it mouse enter and not tool moved for consistent naming convention
+  preview.active = true;
+  preview.x = e.offsetX;
+  preview.y = e.offsetY;
+  canvas.dispatchEvent(new CustomEvent("drawing-changed"));
+});
+
+// Set preview to inactive when the mouse leaves the canvas
+canvas.addEventListener("mouseleave", () => {
+  preview.active = false;
+  canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
 
 canvas.addEventListener("mouseup", () => {
@@ -88,7 +110,27 @@ canvas.addEventListener("drawing-changed", () => {
   for (const cmd of commands) {
     cmd.display(ctx);
   }
+  if (preview.active && !cursor.active) {
+    drawStrokePreview(preview.x, preview.y);
+  }
 });
+
+function drawStrokePreview(x: number, y: number) {
+  ctx.strokeStyle = "gray";
+  ctx.lineWidth = 1;
+
+  ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+
+  ctx.beginPath();
+
+  const radius = currentStrokeSize / 2;
+  ctx.arc(x, y, radius, 0, 2 * Math.PI);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.strokeStyle = "black";
+  ctx.lineWidth = currentStrokeSize;
+}
 
 const clearButton = document.createElement("button");
 clearButton.innerHTML = "clear";
