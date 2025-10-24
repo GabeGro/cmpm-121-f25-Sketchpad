@@ -10,10 +10,12 @@ canvas.height = 500;
 document.body.append(canvas);
 
 const ctx = canvas.getContext("2d")!;
-ctx.lineWidth = 3;
+let currentStrokeSize: number = 3;
+ctx.lineWidth = currentStrokeSize;
 ctx.strokeStyle = "black";
 
 interface DrawCommand {
+  lineWidth: number;
   display(ctx: CanvasRenderingContext2D): void;
   drag(x: number, y: number): void;
 }
@@ -22,12 +24,19 @@ interface ActiveDrawCommand extends DrawCommand {
   drag(x: number, y: number): void;
 }
 
-function createMarkerCommand(startX: number, startY: number): DrawCommand {
+function createMarkerCommand(
+  startX: number,
+  startY: number,
+  lineWidth: number,
+): DrawCommand {
   const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
 
   return {
+    lineWidth: lineWidth,
+
     display(ctx) {
       if (points.length < 2) return;
+      ctx.lineWidth = lineWidth;
       ctx.beginPath();
       ctx.moveTo(points[0].x, points[0].y);
       for (let i = 1; i < points.length; i++) {
@@ -52,7 +61,7 @@ canvas.addEventListener("mousedown", (e) => {
   cursor.x = e.offsetX;
   cursor.y = e.offsetY;
 
-  currentCommand = createMarkerCommand(cursor.x, cursor.y);
+  currentCommand = createMarkerCommand(cursor.x, cursor.y, currentStrokeSize);
   commands.push(currentCommand);
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
@@ -74,6 +83,7 @@ canvas.addEventListener("mouseup", () => {
 
 //clear canvas and redraw based on coords from lines
 canvas.addEventListener("drawing-changed", () => {
+  ctx.strokeStyle = "black";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const cmd of commands) {
     cmd.display(ctx);
@@ -117,20 +127,29 @@ redoButton.addEventListener("click", () => {
   }
 });
 
-/*const lineSize = document.createElement("select");
-lineSize.innerHTML = `
-  <option value=3>Thickness</option>
-  <option value=1>1</option>
-  <option value=3>3</option>
-  <option value=5>5</option>
-  <option value=10>10</option>
-  <option value=15>15</option>
-`;
-document.body.append(lineSize);
+const sizeLabel = document.createElement("span");
+sizeLabel.textContent = "Stroke Size: ";
+document.body.append(sizeLabel);
 
-lineSize.addEventListener("change", (e) => {
-  const target = e.target as HTMLSelectElement;
-  if (target.value) {
-    ctx.lineWidth = target.value;
+const strokeSizes = [3, 10, 20];
+
+strokeSizes.forEach((size) => {
+  const sizeButton = document.createElement("button");
+  sizeButton.innerHTML = `${size}px`;
+
+  if (size === currentStrokeSize) {
+    sizeButton.style.fontWeight = "bold";
   }
-});*/
+
+  sizeButton.addEventListener("click", () => {
+    currentStrokeSize = size;
+
+    document.querySelectorAll(".size-button").forEach((btn) => {
+      (btn as HTMLButtonElement).style.fontWeight = "normal";
+    });
+    sizeButton.style.fontWeight = "bold";
+  });
+
+  sizeButton.classList.add("size-button");
+  document.body.append(sizeButton);
+});
