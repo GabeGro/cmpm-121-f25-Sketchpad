@@ -9,8 +9,15 @@ canvas.width = 500;
 canvas.height = 500;
 document.body.append(canvas);
 
-const ctx = canvas.getContext("2d")!;
+let currentEmoji: string = "😀";
+const stickerSize: number = 30;
 let currentStrokeSize: number = 3;
+
+//define drawing modes
+type DrawingMode = "marker" | "sticker";
+let currentMode: DrawingMode = "marker";
+
+const ctx = canvas.getContext("2d")!;
 ctx.lineWidth = currentStrokeSize;
 ctx.strokeStyle = "black";
 const preview = {
@@ -21,6 +28,10 @@ const preview = {
 
 interface DrawCommand {
   lineWidth: number;
+  emoji?: string;
+  size?: number;
+  x?: number;
+  y?: number;
   display(ctx: CanvasRenderingContext2D): void;
   drag(x: number, y: number): void;
 }
@@ -29,13 +40,37 @@ interface ActiveDrawCommand extends DrawCommand {
   drag(x: number, y: number): void;
 }
 
+function createStickerCommand(
+  x: number,
+  y: number,
+  emoji: string,
+  size: number,
+): DrawCommand {
+  return {
+    lineWidth: 1,
+    emoji: emoji,
+    size: size,
+    x: x,
+    y: y,
+
+    display(ctx) {
+      ctx.font = `${this.size}px Arial`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      ctx.fillText(this.emoji!, this.x!, this.y!);
+    },
+    drag(_x: number, _y: number) {
+    },
+  };
+}
+
 function createMarkerCommand(
   startX: number,
   startY: number,
   lineWidth: number,
 ): DrawCommand {
   const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
-
   return {
     lineWidth: lineWidth,
 
@@ -66,8 +101,20 @@ canvas.addEventListener("mousedown", (e) => {
   cursor.x = e.offsetX;
   cursor.y = e.offsetY;
 
-  currentCommand = createMarkerCommand(cursor.x, cursor.y, currentStrokeSize);
-  commands.push(currentCommand);
+  if (currentMode == "marker") {
+    currentCommand = createMarkerCommand(cursor.x, cursor.y, currentStrokeSize);
+    commands.push(currentCommand);
+  } else if (currentMode == "sticker") {
+    const newStickerCommand = createStickerCommand(
+      cursor.x,
+      cursor.y,
+      currentEmoji,
+      stickerSize,
+    );
+    commands.push(newStickerCommand);
+    cursor.active = false;
+  }
+
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
 
@@ -84,14 +131,13 @@ canvas.addEventListener("mousemove", (e) => {
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
 
+//is the mouse on the canvas or not
 canvas.addEventListener("mouseenter", (e) => { //called it mouse enter and not tool moved for consistent naming convention
   preview.active = true;
   preview.x = e.offsetX;
   preview.y = e.offsetY;
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
-
-// Set preview to inactive when the mouse leaves the canvas
 canvas.addEventListener("mouseleave", () => {
   preview.active = false;
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
@@ -107,14 +153,23 @@ canvas.addEventListener("mouseup", () => {
 canvas.addEventListener("drawing-changed", () => {
   ctx.strokeStyle = "black";
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+
   for (const cmd of commands) {
+    if (cmd.emoji) {
+      console.log("Hi!");
+    } else {
+      ctx.lineWidth = cmd.lineWidth;
+    }
+
     cmd.display(ctx);
   }
+
   if (preview.active && !cursor.active) {
     drawStrokePreview(preview.x, preview.y);
   }
 });
 
+//store the preview appearance
 function drawStrokePreview(x: number, y: number) {
   ctx.strokeStyle = "gray";
   ctx.lineWidth = 1;
@@ -194,4 +249,64 @@ strokeSizes.forEach((size) => {
 
   sizeButton.classList.add("size-button");
   document.body.append(sizeButton);
+});
+
+//emoji selection
+document.body.append(document.createElement("hr"));
+const stickerLabel = document.createElement("span");
+stickerLabel.textContent = "Stickers: ";
+document.body.append(stickerLabel);
+
+const availableEmojis = ["😀", "🚀", "💡", "❤️", "⭐"];
+
+availableEmojis.forEach((emoji) => {
+  const emojiButton = document.createElement("button");
+  emojiButton.innerHTML = emoji;
+  emojiButton.classList.add("emoji-button");
+
+  //set initial emoji
+  if (emoji === currentEmoji) {
+    emojiButton.style.border = "3px solid blue";
+  }
+
+  emojiButton.addEventListener("click", () => {
+    currentMode = "sticker";
+    currentEmoji = emoji;
+
+    //update button styles
+    document.querySelectorAll(".mode-button").forEach((btn) =>
+      (btn as HTMLButtonElement).style.fontWeight = "normal"
+    );
+    document.querySelectorAll(".emoji-button").forEach((btn) =>
+      (btn as HTMLButtonElement).style.border = "1px solid black"
+    );
+    emojiButton.style.border = "3px solid blue";
+    markerModeButton.style.fontWeight = "normal";
+  });
+
+  document.body.append(emojiButton);
+});
+
+//emoji selection menu
+const toolDiv = document.createElement("div");
+toolDiv.style.marginTop = "10px";
+document.body.append(toolDiv);
+
+const markerModeButton = document.createElement("button");
+markerModeButton.innerHTML = "Marker Mode";
+markerModeButton.classList.add("mode-button");
+markerModeButton.style.fontWeight = "bold"; // Start in marker mode
+toolDiv.append(markerModeButton);
+
+markerModeButton.addEventListener("click", () => {
+  currentMode = "marker";
+
+  // Reset UI styles
+  document.querySelectorAll(".mode-button").forEach((btn) =>
+    (btn as HTMLButtonElement).style.fontWeight = "normal"
+  );
+  document.querySelectorAll(".emoji-button").forEach((btn) =>
+    (btn as HTMLButtonElement).style.border = "1px solid black"
+  );
+  markerModeButton.style.fontWeight = "bold";
 });
