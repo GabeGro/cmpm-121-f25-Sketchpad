@@ -303,7 +303,7 @@ const sizeLabel = document.createElement("span");
 sizeLabel.textContent = "Stroke Size: ";
 sizeDiv.append(sizeLabel);
 
-const strokeSizes = [3, 10, 20];
+const strokeSizes = [3, 5, 10, 15];
 
 strokeSizes.forEach((size) => {
   const sizeButton = document.createElement("button");
@@ -335,7 +335,7 @@ const stickerLabel = document.createElement("span");
 stickerLabel.textContent = "Stickers: ";
 toolDiv.append(stickerLabel);
 
-const availableEmojis = ["😀", "🚀", "💡", "❤️", "⭐"];
+const availableEmojis = ["🤓", "🥸", "💡", "❤️", "⭐", ":)"];
 
 function updateEmojiButtonStyles(activeButton: HTMLButtonElement | null) {
   document.querySelectorAll(".mode-button").forEach((btn) =>
