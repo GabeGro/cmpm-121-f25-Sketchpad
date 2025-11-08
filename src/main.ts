@@ -32,7 +32,7 @@ interface DrawCommand {
   size?: number;
   x?: number;
   y?: number;
-  display(ctx: CanvasRenderingContext2D): void;
+  display(ctx: CanvasRenderingContext2D, scale?: number): void;
   drag(x: number, y: number): void;
 }
 
@@ -53,15 +53,15 @@ function createStickerCommand(
     x: x,
     y: y,
 
-    display(ctx) {
-      ctx.font = `${this.size}px Arial`;
+    display(ctx, scale = 1) { //apply scale to position and size
+      ctx.font = `${this.size! * scale}px Arial`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      ctx.fillText(this.emoji!, this.x!, this.y!);
+      ctx.fillText(this.emoji!, this.x! * scale, this.y! * scale);
     },
     drag(_x: number, _y: number) {
-      // Stickers are placed instantly, no dragging
+      //stickers are placed instantly, no dragging
     },
   };
 }
@@ -75,13 +75,13 @@ function createMarkerCommand(
   return {
     lineWidth: lineWidth,
 
-    display(ctx) {
+    display(ctx, scale = 1) { //apply scale to lineWidth and points
       if (points.length < 2) return;
-      ctx.lineWidth = lineWidth;
+      ctx.lineWidth = lineWidth * scale;
       ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
+      ctx.moveTo(points[0].x * scale, points[0].y * scale);
       for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
+        ctx.lineTo(points[i].x * scale, points[i].y * scale);
       }
       ctx.stroke();
     },
@@ -104,7 +104,7 @@ canvas.addEventListener("mousedown", (e) => {
 
   if (currentMode == "marker") {
     currentCommand = createMarkerCommand(cursor.x, cursor.y, currentStrokeSize);
-    commands.push(currentCommand);
+    commands.push(currentCommand as ActiveDrawCommand);
   } else if (currentMode == "sticker") {
     const newStickerCommand = createStickerCommand(
       cursor.x,
@@ -112,8 +112,8 @@ canvas.addEventListener("mousedown", (e) => {
       currentEmoji,
       stickerSize,
     );
-    commands.push(newStickerCommand as ActiveDrawCommand); //Cast for array type
-    cursor.active = false; //Sticker is placed immediately
+    commands.push(newStickerCommand as ActiveDrawCommand);
+    cursor.active = false; //sticker is placed
   }
 
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
@@ -134,7 +134,6 @@ canvas.addEventListener("mousemove", (e) => {
 
 //is the mouse on the canvas or not
 canvas.addEventListener("mouseenter", (e) => {
-  //called it mouse enter and not tool moved for consistent naming convention
   preview.active = true;
   preview.x = e.offsetX;
   preview.y = e.offsetY;
@@ -151,17 +150,28 @@ canvas.addEventListener("mouseup", () => {
   currentCommand = null;
 });
 
-//clear canvas and redraw based on coords from lines
-canvas.addEventListener("drawing-changed", () => {
-  ctx.strokeStyle = "black";
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+/**
+Redraws all commands on the given context.
+@param context The 2D rendering context to draw on.
+@param scale The scaling factor (1 for display, > 1 for export).
+ */
+function redrawCommands(context: CanvasRenderingContext2D, scale: number) {
+  context.clearRect(0, 0, context.canvas.width, context.canvas.height);
 
   for (const cmd of commands) {
     if (!cmd.emoji) {
-      ctx.lineWidth = cmd.lineWidth;
+      //set stroke style only for marker commands
+      context.strokeStyle = "black";
     }
-    cmd.display(ctx);
+
+    //pass the scale factor to the display function
+    cmd.display(context, scale);
   }
+}
+
+//clear canvas and redraw based on coords from lines
+canvas.addEventListener("drawing-changed", () => {
+  redrawCommands(ctx, 1);
 
   if (preview.active && !cursor.active) {
     drawStrokePreview(preview.x, preview.y);
@@ -186,21 +196,23 @@ function drawStrokePreview(x: number, y: number) {
     ctx.strokeStyle = "black";
     ctx.lineWidth = currentStrokeSize;
   } else if (currentMode === "sticker") {
-    //draw preview of the sticker
+    //draw a preview of the sticker
     ctx.font = `${stickerSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.globalAlpha = 0.5;
+    ctx.globalAlpha = 0.5; // Make it semi-transparent for preview
     ctx.fillText(currentEmoji, x, y);
-    ctx.globalAlpha = 1.0;
+    ctx.globalAlpha = 1.0; //reset opacity
   }
 }
 
+//ui elements
 const buttonDiv = document.createElement("div");
 document.body.append(document.createElement("hr"));
 document.body.append(buttonDiv);
 buttonDiv.style.marginBottom = "10px";
 
+//clear undo and redo buttons
 const clearButton = document.createElement("button");
 clearButton.innerHTML = "Clear";
 buttonDiv.append(clearButton);
@@ -234,11 +246,54 @@ redoButton.addEventListener("click", () => {
   if (redoCommands.length > 0) {
     const redoCmd = redoCommands.pop();
     if (redoCmd) {
-      commands.push(redoCmd as ActiveDrawCommand); // Cast for array type
+      commands.push(redoCmd as ActiveDrawCommand);
       canvas.dispatchEvent(new CustomEvent("drawing-changed"));
     }
   }
 });
+
+//export button
+const exportButton = document.createElement("button");
+exportButton.innerHTML = "Export PNG (1024x1024) 💾";
+buttonDiv.append(exportButton);
+
+exportButton.addEventListener("click", () => {
+  exportDrawing();
+});
+
+//export handler
+const EXPORT_SIZE = 1024;
+const DISPLAY_SIZE = canvas.width;
+const SCALE_FACTOR = EXPORT_SIZE / DISPLAY_SIZE; // 1024 / 500 = 2.048
+
+function exportDrawing() {
+  //create a temporary high-resolution canvas
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = EXPORT_SIZE;
+  exportCanvas.height = EXPORT_SIZE;
+  const exportCtx = exportCanvas.getContext("2d");
+
+  if (!exportCtx) {
+    console.error("Could not get 2D context for export canvas.");
+    return;
+  }
+
+  //redraw all commands onto the temporary canvas with the scale factor
+  redrawCommands(exportCtx, SCALE_FACTOR);
+
+  //convert the temporary canvas content to a PNG data URL
+  const imageURL = exportCanvas.toDataURL("image/png");
+
+  //create a temporary <a> tag to trigger the download
+  const link = document.createElement("a");
+  link.download = "sketchpad_export.png";
+  link.href = imageURL;
+
+  //simulate a click on the link to start the download
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
 
 //stroke size controls
 const sizeDiv = document.createElement("div");
@@ -271,7 +326,7 @@ strokeSizes.forEach((size) => {
   sizeDiv.append(sizeButton);
 });
 
-//sticker controls
+//sticker mode controls
 document.body.append(document.createElement("hr"));
 const toolDiv = document.createElement("div");
 document.body.append(toolDiv);
@@ -349,6 +404,7 @@ customEmojiInput.addEventListener("input", (e) => {
   const inputElement = e.target as HTMLInputElement;
   const emoji = inputElement.value.trim().substring(0, 1);
 
+  //ssanitization to encourage single emoji/character
   if (emoji.length > 0) {
     currentEmoji = emoji;
     //switch to custom mode if user types while in marker mode
