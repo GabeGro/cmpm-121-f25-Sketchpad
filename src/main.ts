@@ -12,6 +12,7 @@ document.body.append(canvas);
 let currentEmoji: string = "😀";
 const stickerSize: number = 30;
 let currentStrokeSize: number = 3;
+let currentStrokeColor: string = "black"; //variable for current color
 
 //define drawing modes
 type DrawingMode = "marker" | "sticker";
@@ -19,7 +20,7 @@ let currentMode: DrawingMode = "marker";
 
 const ctx = canvas.getContext("2d")!;
 ctx.lineWidth = currentStrokeSize;
-ctx.strokeStyle = "black";
+ctx.strokeStyle = currentStrokeColor; //use the new color variable
 const preview = {
   active: false,
   x: 0,
@@ -28,6 +29,7 @@ const preview = {
 
 interface DrawCommand {
   lineWidth: number;
+  color?: string; //added color property for marker commands
   emoji?: string;
   size?: number;
   x?: number;
@@ -70,14 +72,17 @@ function createMarkerCommand(
   startX: number,
   startY: number,
   lineWidth: number,
+  color: string,
 ): DrawCommand {
   const points: { x: number; y: number }[] = [{ x: startX, y: startY }];
   return {
     lineWidth: lineWidth,
+    color: color, //store the color used when the command was created
 
     display(ctx, scale = 1) { //apply scale to lineWidth and points
       if (points.length < 2) return;
       ctx.lineWidth = lineWidth * scale;
+      ctx.strokeStyle = this.color!; //use the command's stored color
       ctx.beginPath();
       ctx.moveTo(points[0].x * scale, points[0].y * scale);
       for (let i = 1; i < points.length; i++) {
@@ -103,7 +108,13 @@ canvas.addEventListener("mousedown", (e) => {
   cursor.y = e.offsetY;
 
   if (currentMode == "marker") {
-    currentCommand = createMarkerCommand(cursor.x, cursor.y, currentStrokeSize);
+    //pass currentStrokeColor to the marker command
+    currentCommand = createMarkerCommand(
+      cursor.x,
+      cursor.y,
+      currentStrokeSize,
+      currentStrokeColor,
+    );
     commands.push(currentCommand as ActiveDrawCommand);
   } else if (currentMode == "sticker") {
     const newStickerCommand = createStickerCommand(
@@ -113,7 +124,7 @@ canvas.addEventListener("mousedown", (e) => {
       stickerSize,
     );
     commands.push(newStickerCommand as ActiveDrawCommand);
-    cursor.active = false; //sticker is placed
+    cursor.active = false;
   }
 
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
@@ -145,26 +156,20 @@ canvas.addEventListener("mouseleave", () => {
 });
 
 canvas.addEventListener("mouseup", () => {
-  //stop adding coords and reset currentLine
   cursor.active = false;
   currentCommand = null;
 });
 
 /**
-Redraws all commands on the given context.
-@param context The 2D rendering context to draw on.
-@param scale The scaling factor (1 for display, > 1 for export).
+ * Redraws all commands on the given context.
+ * @param context The 2D rendering context to draw on.
+ * @param scale The scaling factor (1 for display, > 1 for export).
  */
 function redrawCommands(context: CanvasRenderingContext2D, scale: number) {
   context.clearRect(0, 0, context.canvas.width, context.canvas.height);
 
   for (const cmd of commands) {
-    if (!cmd.emoji) {
-      //set stroke style only for marker commands
-      context.strokeStyle = "black";
-    }
-
-    //pass the scale factor to the display function
+    //marker commands set their own color inside display
     cmd.display(context, scale);
   }
 }
@@ -181,10 +186,15 @@ canvas.addEventListener("drawing-changed", () => {
 //store the preview appearance
 function drawStrokePreview(x: number, y: number) {
   if (currentMode === "marker") {
-    ctx.strokeStyle = "gray";
+    // Use the current color for the preview
+    ctx.strokeStyle = currentStrokeColor;
     ctx.lineWidth = 1;
 
-    ctx.fillStyle = "rgba(100, 100, 100, 0.5)";
+    //make the fill slightly transparent for preview
+    const R = parseInt(currentStrokeColor.slice(1, 3), 16);
+    const G = parseInt(currentStrokeColor.slice(3, 5), 16);
+    const B = parseInt(currentStrokeColor.slice(5, 7), 16);
+    ctx.fillStyle = `rgba(${R}, ${G}, ${B}, 0.5)`;
 
     ctx.beginPath();
 
@@ -193,17 +203,26 @@ function drawStrokePreview(x: number, y: number) {
     ctx.fill();
     ctx.stroke();
 
-    ctx.strokeStyle = "black";
+    ctx.strokeStyle = currentStrokeColor;
     ctx.lineWidth = currentStrokeSize;
   } else if (currentMode === "sticker") {
-    //draw a preview of the sticker
     ctx.font = `${stickerSize}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.globalAlpha = 0.5; // Make it semi-transparent for preview
+    ctx.globalAlpha = 0.5;
     ctx.fillText(currentEmoji, x, y);
-    ctx.globalAlpha = 1.0; //reset opacity
+    ctx.globalAlpha = 1.0;
   }
+}
+
+//utility function for random color
+function getRandomColor(): string {
+  const letters = "0123456789ABCDEF";
+  let color = "#";
+  for (let i = 0; i < 6; i++) {
+    color += letters[Math.floor(Math.random() * 16)];
+  }
+  return color;
 }
 
 //ui elements
@@ -220,7 +239,7 @@ buttonDiv.append(clearButton);
 clearButton.addEventListener("click", () => {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   commands = [];
-  redoCommands.length = 0; //clear redo history
+  redoCommands.length = 0;
   canvas.dispatchEvent(new CustomEvent("drawing-changed"));
 });
 
@@ -264,36 +283,51 @@ exportButton.addEventListener("click", () => {
 //export handler
 const EXPORT_SIZE = 1024;
 const DISPLAY_SIZE = canvas.width;
-const SCALE_FACTOR = EXPORT_SIZE / DISPLAY_SIZE; // 1024 / 500 = 2.048
+const SCALE_FACTOR = EXPORT_SIZE / DISPLAY_SIZE;
 
 function exportDrawing() {
-  //create a temporary high-resolution canvas
   const exportCanvas = document.createElement("canvas");
   exportCanvas.width = EXPORT_SIZE;
   exportCanvas.height = EXPORT_SIZE;
   const exportCtx = exportCanvas.getContext("2d");
 
-  if (!exportCtx) {
-    console.error("Could not get 2D context for export canvas.");
-    return;
-  }
+  if (!exportCtx) return;
 
-  //redraw all commands onto the temporary canvas with the scale factor
+  //use the unified redraw function
   redrawCommands(exportCtx, SCALE_FACTOR);
 
-  //convert the temporary canvas content to a PNG data URL
   const imageURL = exportCanvas.toDataURL("image/png");
 
-  //create a temporary <a> tag to trigger the download
   const link = document.createElement("a");
   link.download = "sketchpad_export.png";
   link.href = imageURL;
 
-  //simulate a click on the link to start the download
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
 }
+
+//color controls
+const colorDiv = document.createElement("div");
+document.body.append(colorDiv);
+colorDiv.style.marginTop = "10px";
+
+const colorLabel = document.createElement("span");
+colorLabel.textContent = "Color: ";
+colorDiv.append(colorLabel);
+
+//random Color Button
+const randomColorButton = document.createElement("button");
+randomColorButton.innerHTML = "🎨 Random Color";
+colorDiv.append(randomColorButton);
+
+randomColorButton.addEventListener("click", () => {
+  currentStrokeColor = getRandomColor();
+  //ensure switch to marker mode
+  currentMode = "marker";
+  //reset UI styles to highlight marker mode
+  (document.querySelector("#marker-mode-button") as HTMLButtonElement).click();
+});
 
 //stroke size controls
 const sizeDiv = document.createElement("div");
@@ -303,7 +337,7 @@ const sizeLabel = document.createElement("span");
 sizeLabel.textContent = "Stroke Size: ";
 sizeDiv.append(sizeLabel);
 
-const strokeSizes = [3, 5, 10, 15];
+const strokeSizes = [3, 10, 20];
 
 strokeSizes.forEach((size) => {
   const sizeButton = document.createElement("button");
@@ -335,7 +369,7 @@ const stickerLabel = document.createElement("span");
 stickerLabel.textContent = "Stickers: ";
 toolDiv.append(stickerLabel);
 
-const availableEmojis = ["🤓", "🥸", "💡", "❤️", "⭐", ":)"];
+const availableEmojis = ["😀", "🚀", "💡", "❤️", "⭐"];
 
 function updateEmojiButtonStyles(activeButton: HTMLButtonElement | null) {
   document.querySelectorAll(".mode-button").forEach((btn) =>
@@ -358,10 +392,9 @@ availableEmojis.forEach((emoji) => {
   const emojiButton = document.createElement("button");
   emojiButton.innerHTML = emoji;
   emojiButton.classList.add("emoji-button");
-  emojiButton.dataset.emoji = emoji; //store the emoji for reference
+  emojiButton.dataset.emoji = emoji;
 
-  //set initial emoji
-  if (emoji === currentEmoji) {
+  if (emoji === currentEmoji && currentMode === "sticker") {
     emojiButton.style.border = "3px solid blue";
   }
 
@@ -395,7 +428,6 @@ customEmojiDiv.append(customEmojiInput);
 
 customEmojiButton.addEventListener("click", () => {
   currentMode = "sticker";
-  //set the current emoji to the input value if it's not empty, otherwise default
   currentEmoji = customEmojiInput.value.trim() || availableEmojis[0];
   updateEmojiButtonStyles(customEmojiButton);
 });
@@ -404,10 +436,8 @@ customEmojiInput.addEventListener("input", (e) => {
   const inputElement = e.target as HTMLInputElement;
   const emoji = inputElement.value.trim().substring(0, 1);
 
-  //ssanitization to encourage single emoji/character
   if (emoji.length > 0) {
     currentEmoji = emoji;
-    //switch to custom mode if user types while in marker mode
     if (currentMode !== "sticker") {
       currentMode = "sticker";
       updateEmojiButtonStyles(customEmojiButton);
@@ -415,12 +445,12 @@ customEmojiInput.addEventListener("input", (e) => {
   }
 });
 
-//marker mode control
+// Marker Mode Control
 const markerModeButton = document.createElement("button");
 markerModeButton.id = "marker-mode-button";
 markerModeButton.innerHTML = "Marker Mode";
 markerModeButton.classList.add("mode-button");
-markerModeButton.style.fontWeight = "bold"; // Start in marker mode
+markerModeButton.style.fontWeight = "bold"; //start in marker mode
 toolDiv.append(markerModeButton);
 
 markerModeButton.addEventListener("click", () => {
